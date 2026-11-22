@@ -12,11 +12,11 @@ INSERT INTO "positions" VALUES(2,20,'8s11PkgQt4ZzdZ7oo84hK5t9HG1EvdgAjcg4W7Lpump
 INSERT INTO "positions" VALUES(3,24,'7R4MP6VX7n3RMNhL9zsk5Zu5ibZvwq8npUYnRq7epump','58XqWPXDGp3GfU9DAFxs8C1GJwTLdHdQhJRofAF5yWTV','Singularity','Singularity','pumpswap','closed','2026-11-22T11:28:39+00:00',0.0008577,0.000864241445176438,5.79227952436141549e+03,5.040991,3.50629730000000042e-02,3.78898789552142289e-02,8.0623799999999992e-04,9.60624000000000091e-04,76.2,'https://api.dexscreener.com/tokens/v1/solana/7R4MP6VX7n3RMNhL9zsk5Zu5ibZvwq8npUYnRq7epump',0.001075,'2026-11-22T12:14:06+00:00','https://api.dexscreener.com/tokens/v1/solana/7R4MP6VX7n3RMNhL9zsk5Zu5ibZvwq8npUYnRq7epump','2026-11-22T12:14:06+00:00',0.001075,1.06678679585858532e-03,6.14058993256727347e+00,3.85373819435324144e-02,4.75731741777165595e-02,1.09959893256727347e+00,'take_profit','https://api.dexscreener.com/tokens/v1/solana/7R4MP6VX7n3RMNhL9zsk5Zu5ibZvwq8npUYnRq7epump',25);
 INSERT INTO "positions" VALUES(4,24,'8s11PkgQt4ZzdZ7oo84hK5t9HG1EvdgAjcg4W7Lpump','Hr9qopJXCuak38rxDpZduUFhdAK2BfjtoXbfQZVn2EwU','BLOB','BLOB','pumpswap','closed','2026-11-22T11:28:48+00:00',0.01603,1.61506691294396667e-02,309.726546368395,5.037343,0.035052029,3.73744327146292576e-02,1.50681999999999986e-02,0.0179536,75.3,'https://api.dexscreener.com/tokens/v1/solana/8s11PkgQt4ZzdZ7oo84hK5t9HG1EvdgAjcg4W7Lpump',0.01175,'2026-11-22T12:14:06+00:00','https://api.dexscreener.com/tokens/v1/solana/8s11PkgQt4ZzdZ7oo84hK5t9HG1EvdgAjcg4W7Lpump','2026-11-22T12:14:06+00:00',0.01175,1.16615982701183899e-02,3.5810708376674003e+00,3.0835719672018258e-02,2.73803624892230423e-02,-1.45627216233259959e+00,'stop_loss','https://api.dexscreener.com/tokens/v1/solana/8s11PkgQt4ZzdZ7oo84hK5t9HG1EvdgAjcg4W7Lpump',25);
 DELETE FROM sqlite_sequence;
-INSERT INTO sqlite_sequence VALUES('equity_snapshots',23);
+INSERT INTO sqlite_sequence VALUES('equity_snapshots',24);
 INSERT INTO sqlite_sequence VALUES('errors',7);
-INSERT INTO sqlite_sequence VALUES('evaluations',350);
+INSERT INTO sqlite_sequence VALUES('evaluations',368);
 INSERT INTO sqlite_sequence VALUES('fills',8);
 INSERT INTO sqlite_sequence VALUES('positions',4);
-INSERT INTO sqlite_sequence VALUES('runs',25);
-INSERT INTO sqlite_sequence VALUES('scans',23);
-INSERT INTO sqlite_sequence VALUES('skips',2821);
+INSERT INTO sqlite_sequence VALUES('runs',26);
+INSERT INTO sqlite_sequence VALUES('scans',24);
+INSERT INTO sqlite_sequence VALUES('skips',2970);
