@@ -1,5 +1,6 @@
 name: paper-bot-scan
 # Solana Paper Bot 2.0 -- PAPER TRADING ONLY. No wallet, no keys, no secrets: all data APIs are free and public.
+# Schedule re-registration touch: 2026-11-22
 
 on:
   schedule:
