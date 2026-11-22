@@ -1,0 +1,105 @@
+name: paper-bot-scan
+# Solana Paper Bot 2.0 -- PAPER TRADING ONLY. No wallet, no keys, no secrets: all data APIs are free and public.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+# One run at a time, never cancel a running cycle (a newer *pending* run may replace an older pending one).
+concurrency:
+  group: paper-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write   # commit the ledger + dashboard back to main
+      actions: read     # read this run's queued time for delay tracking
+    steps:
+      - name: Record job start time
+        run: echo "JOB_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Look up when GitHub queued this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          q=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}" --jq .created_at || true)
+          echo "QUEUED_AT=$q" >> "$GITHUB_ENV"
+          echo "event=${{ github.event_name }} queued_at=$q job_started_at=$JOB_STARTED_AT"
+
+      - name: Restore ledger from ledger/*.sql
+        run: python tools/ledger_io.py restore
+
+      - name: Run paper-trading cycle
+        id: cycle
+        continue-on-error: true
+        run: python gh_run.py
+
+      - name: Build dashboard + Pages site
+        if: always()
+        run: |
+          python dashboard.py > /dev/null
+          python tools/build_site.py
+
+      - name: Save ledger and commit to main
+        if: always()
+        run: |
+          python tools/ledger_io.py dump
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ledger docs dashboard.json
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+          git commit -m "ledger: ${{ github.event_name }} run ${{ github.run_id }} (cycle ${{ steps.cycle.outcome }})"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase origin main && git push origin HEAD:main; then echo "pushed"; exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            echo "push attempt $i failed; retrying"; sleep $((i * 5))
+          done
+          echo "could not push ledger after 5 attempts"; exit 1
+
+      - name: Mark job failed if the cycle failed
+        if: steps.cycle.outcome == 'failure'
+        run: |
+          echo "Cycle failed; the failure was recorded in the ledger and committed."
+          exit 1
+
+  deploy-pages:
+    needs: scan
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4

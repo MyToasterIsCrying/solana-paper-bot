@@ -1,0 +1,13 @@
+# working copy of the ledger is rebuilt from ledger/*.sql on every run
+ledger.db
+ledger.db-*
+*.lock
+run.lock
+__pycache__/
+*.pyc
+cron.log
+*.log
+spb-backups/
+backups/
+ledger.tmp/
+.env

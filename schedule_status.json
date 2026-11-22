@@ -1,0 +1,5 @@
+{
+  "active": true,
+  "cadence": "GitHub Actions cron */15 * * * * (best effort: GitHub may start scheduled runs late or skip them under load)",
+  "note": "Scheduled runs via GitHub Actions"
+}
