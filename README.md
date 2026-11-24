@@ -82,13 +82,14 @@ The verified remote-ledger backup is preserved under
 The local dashboard publisher reads only the canonical AppData dashboard and opens the canonical local ledger in
 SQLite read-only mode. The service marks snapshots publishable only when they come from that canonical ledger and
 contain no synthetic fixture markers. The publisher checks PAPER mode, snapshot age, account totals, and position/fill
-counts before building the existing `docs/` site. It stages only `docs/index.html`, `docs/dashboard.json`,
-`docs/.nojekyll`, and the Pages-only workflow on the separate `dashboard-feed` branch; unexpected files, including
-ledger files, cause it to stop. Pushing is opt-in via `--publish`; the workflow validates freshness and fixture markers,
-has no ledger-writing permission, and deploys only `docs/`. It does not check out `main` or run a trading cycle.
+counts before building the existing `docs/` site. It clones `main` and stages only `docs/index.html`,
+`docs/dashboard.json`, and `docs/.nojekyll`; its commit is rejected if any other path is staged. Pushing is opt-in
+via `--publish`. The Pages-only workflow runs only for those dashboard paths on `main`, verifies that the pushed
+commit changed no other paths, has no ledger-writing permission, and deploys only `docs/`. It does not run a
+trading cycle.
 
-Run `python tools/publish_dashboard.py` for local validation/build only. Do not add `--publish` until deployment is
-separately approved. The existing trading workflow remains disabled and unchanged.
+Run `python tools/publish_dashboard.py` for local validation/build only. Add `--publish` only after deployment is
+approved. The existing trading workflow remains disabled and unchanged.
 
 ## Prepared Task Scheduler configuration
 

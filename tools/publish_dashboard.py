@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish only a verified local dashboard snapshot to the dashboard-feed branch."""
+"""Publish only a verified local dashboard snapshot to the main branch."""
 import argparse
 import datetime
 import json
@@ -18,14 +18,12 @@ import config
 from tools import build_site
 from tools.validate_dashboard_feed import validate_site
 
-FEED_BRANCH = "dashboard-feed"
+PUBLISH_BRANCH = "main"
 COAUTHOR = "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
-ALLOWED_TRACKED = {
-    ".github/workflows/publish-dashboard.yml",
+DASHBOARD_FILES = {
     "docs/.nojekyll",
     "docs/dashboard.json",
     "docs/index.html",
-    "tools/validate_dashboard_feed.py",
 }
 SYNTHETIC_MARKERS = ("test-fixture://", "synthetic_trial_", "synthetic monitor")
 MAX_SNAPSHOT_AGE_SEC = 300
@@ -122,64 +120,46 @@ def _git(git, *args, cwd=None, check=True):
     return result
 
 
-def publish_feed(remote_url, docs_directory, workflow_file, git=None):
+def publish_dashboard(remote_url, docs_directory, git=None):
     git = git or find_git()
-    with tempfile.TemporaryDirectory(prefix="paperbot-dashboard-feed-") as temp_dir:
-        worktree = os.path.join(temp_dir, "feed")
-        branch_ref = "refs/heads/" + FEED_BRANCH
-        remote_branch = _git(git, "ls-remote", "--heads", remote_url, branch_ref)
-        if remote_branch.stdout.strip():
-            _git(git, "clone", "--depth", "1", "--single-branch", "--branch",
-                 FEED_BRANCH, remote_url, worktree)
-        else:
-            os.makedirs(worktree)
-            _git(git, "init", worktree)
-            _git(git, "-C", worktree, "checkout", "--orphan", FEED_BRANCH)
-            _git(git, "-C", worktree, "remote", "add", "origin", remote_url)
+    with tempfile.TemporaryDirectory(prefix="paperbot-dashboard-publish-") as temp_dir:
+        worktree = os.path.join(temp_dir, "main")
+        _git(git, "clone", "--single-branch", "--branch", PUBLISH_BRANCH,
+             remote_url, worktree)
 
-        tracked = set(_git(git, "-C", worktree, "ls-files", "-z").stdout.split("\0"))
-        tracked.discard("")
-        unexpected = tracked - ALLOWED_TRACKED
-        if unexpected:
-            raise RuntimeError("Dashboard feed branch contains non-dashboard files: " +
-                               ", ".join(sorted(unexpected)))
-
-        for name in ("index.html", "dashboard.json", ".nojekyll"):
+        for path in sorted(DASHBOARD_FILES):
+            name = path.split("/", 1)[1]
             destination = os.path.join(worktree, "docs", name)
             os.makedirs(os.path.dirname(destination), exist_ok=True)
             shutil.copyfile(os.path.join(docs_directory, name), destination)
-        validator_destination = os.path.join(
-            worktree, "tools", "validate_dashboard_feed.py")
-        os.makedirs(os.path.dirname(validator_destination), exist_ok=True)
-        shutil.copyfile(os.path.join(ROOT, "tools", "validate_dashboard_feed.py"),
-                        validator_destination)
-        workflow_destination = os.path.join(
-            worktree, ".github", "workflows", "publish-dashboard.yml")
-        os.makedirs(os.path.dirname(workflow_destination), exist_ok=True)
-        shutil.copyfile(workflow_file, workflow_destination)
 
-        paths = sorted(ALLOWED_TRACKED)
+        paths = sorted(DASHBOARD_FILES)
         _git(git, "-C", worktree, "add", "--", *paths)
-        staged = _git(git, "-C", worktree, "diff", "--cached", "--quiet", check=False)
-        if staged.returncode == 0:
+        staged = set(_git(
+            git, "-C", worktree, "diff", "--cached", "--name-only", "-z"
+        ).stdout.split("\0"))
+        staged.discard("")
+        unexpected = staged - DASHBOARD_FILES
+        if unexpected:
+            raise RuntimeError("Dashboard publish staged non-dashboard files: " +
+                               ", ".join(sorted(unexpected)))
+        if not staged:
             return False
-        if staged.returncode != 1:
-            raise RuntimeError("Could not inspect staged dashboard files")
 
         _git(git, "-C", worktree, "config", "user.name", "Paper Bot Dashboard Publisher")
         _git(git, "-C", worktree, "config", "user.email",
              "paper-bot-dashboard@users.noreply.github.com")
         _git(git, "-C", worktree, "commit", "-m", "dashboard: publish verified snapshot",
              "-m", COAUTHOR)
-        _git(git, "-C", worktree, "push", "-u", "origin", "HEAD:" + branch_ref)
+        _git(git, "-C", worktree, "push", "origin", "HEAD:refs/heads/" + PUBLISH_BRANCH)
         return True
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Validate the canonical PAPER dashboard; --publish pushes only dashboard-feed")
+        description="Validate the canonical PAPER dashboard; --publish pushes only dashboard files")
     parser.add_argument("--publish", action="store_true",
-                        help="push the dashboard-only feed branch (not enabled by default)")
+                        help="commit only docs dashboard assets to main (not enabled by default)")
     args = parser.parse_args()
 
     data = validate_snapshot(
@@ -195,10 +175,9 @@ def main():
         if args.publish:
             git = find_git()
             remote = _git(git, "-C", ROOT, "remote", "get-url", "origin").stdout.strip()
-            changed = publish_feed(
-                remote, docs_directory,
-                os.path.join(ROOT, ".github", "workflows", "publish-dashboard.yml"), git)
-            print("dashboard feed pushed" if changed else "dashboard feed is already current")
+            changed = publish_dashboard(remote, docs_directory, git)
+            print("dashboard assets pushed to main" if changed
+                  else "dashboard assets on main are already current")
         else:
             print("snapshot validated and site built locally; no push or deployment performed")
 

@@ -9,7 +9,7 @@ import unittest
 
 import db
 from tools import build_site
-from tools.publish_dashboard import ALLOWED_TRACKED, find_git, publish_feed, validate_snapshot
+from tools.publish_dashboard import DASHBOARD_FILES, find_git, publish_dashboard, validate_snapshot
 from tools.validate_dashboard_feed import validate_site
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,55 +89,66 @@ class DashboardPublisherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Synthetic or trial"):
             validate_site(docs)
 
-    def test_feed_push_contains_only_allowlisted_dashboard_files(self):
+    def _seed_main_branch(self, remote):
         git = find_git()
-        remote = os.path.join(self.temp, "remote.git")
         subprocess.run([git, "init", "--bare", remote], check=True,
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        seed = os.path.join(self.temp, "seed-main")
+        os.makedirs(seed)
+        subprocess.run([git, "-C", seed, "init"], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run([git, "-C", seed, "checkout", "-b", "main"], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run([git, "-C", seed, "config", "user.name", "Test"],
+                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run([git, "-C", seed, "config", "user.email", "test@example.invalid"],
+                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for path, content in (
+            ("README.md", "paper bot source\n"),
+            ("ledger/state.sql", "historical ledger must remain untouched\n"),
+            ("docs/index.html", "old dashboard\n"),
+            ("docs/dashboard.json", "{}\n"),
+            ("docs/.nojekyll", "stale marker\n"),
+        ):
+            destination = os.path.join(seed, *path.split("/"))
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            with open(destination, "w", encoding="utf-8") as output:
+                output.write(content)
+        subprocess.run([git, "-C", seed, "add", "--", "."], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run([git, "-C", seed, "commit", "-m", "seed production main"],
+                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run([git, "-C", seed, "remote", "add", "origin", remote], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run([git, "-C", seed, "push", "-u", "origin", "main"], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def test_main_push_changes_only_dashboard_assets_and_preserves_ledger(self):
+        git = find_git()
+        remote = os.path.join(self.temp, "remote.git")
+        self._seed_main_branch(remote)
         docs = self.build_site()
-        self.assertTrue(publish_feed(remote, docs, WORKFLOW, git=git))
-        self.assertFalse(publish_feed(remote, docs, WORKFLOW, git=git))
+        self.assertTrue(publish_dashboard(remote, docs, git=git))
+        self.assertFalse(publish_dashboard(remote, docs, git=git))
 
         result = subprocess.run(
-            [git, "--git-dir", remote, "ls-tree", "-r", "--name-only",
-             "refs/heads/dashboard-feed"],
+            [git, "--git-dir", remote, "show", "--pretty=format:", "--name-only",
+             "refs/heads/main"],
             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
-        self.assertEqual(set(result.stdout.splitlines()), ALLOWED_TRACKED)
-        self.assertNotIn("ledger/state.sql", result.stdout.splitlines())
+        self.assertEqual(set(result.stdout.splitlines()), DASHBOARD_FILES)
+        ledger = subprocess.run(
+            [git, "--git-dir", remote, "show", "refs/heads/main:ledger/state.sql"],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.assertEqual(ledger.stdout, "historical ledger must remain untouched\n")
 
         with open(WORKFLOW, encoding="utf-8") as workflow_file:
             workflow = workflow_file.read()
         self.assertNotIn("contents: write", workflow)
+        self.assertIn("- main", workflow)
+        self.assertIn("docs/dashboard.json", workflow)
         self.assertIn("path: docs", workflow)
-
-    def test_feed_refuses_a_branch_containing_ledger_files(self):
-        git = find_git()
-        remote = os.path.join(self.temp, "remote-with-ledger.git")
-        clone = os.path.join(self.temp, "contaminated-feed")
-        subprocess.run([git, "init", "--bare", remote], check=True,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        docs = self.build_site()
-        publish_feed(remote, docs, WORKFLOW, git=git)
-        subprocess.run([git, "clone", "--branch", "dashboard-feed", remote, clone],
-                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        subprocess.run([git, "-C", clone, "config", "user.name", "Test"],
-                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        subprocess.run([git, "-C", clone, "config", "user.email", "test@example.invalid"],
-                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        ledger_file = os.path.join(clone, "ledger", "state.sql")
-        os.makedirs(os.path.dirname(ledger_file))
-        with open(ledger_file, "w", encoding="utf-8") as output:
-            output.write("synthetic ledger content")
-        subprocess.run([git, "-C", clone, "add", "--", "ledger/state.sql"],
-                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        subprocess.run([git, "-C", clone, "commit", "-m", "malicious test fixture"],
-                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        subprocess.run([git, "-C", clone, "push", "origin", "dashboard-feed"],
-                       check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-        with self.assertRaisesRegex(RuntimeError, "non-dashboard files"):
-            publish_feed(remote, docs, WORKFLOW, git=git)
 
 
 if __name__ == "__main__":

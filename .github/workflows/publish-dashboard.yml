@@ -3,7 +3,11 @@ name: dashboard-pages
 on:
   push:
     branches:
-      - dashboard-feed
+      - main
+    paths:
+      - docs/.nojekyll
+      - docs/dashboard.json
+      - docs/index.html
 
 permissions:
   contents: read
@@ -26,29 +30,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: dashboard-feed
-          fetch-depth: 1
+          ref: main
+          fetch-depth: 2
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - name: Verify dashboard-only branch contents
+      - name: Verify dashboard-only commit
         run: |
           python - <<'PY'
           import subprocess
 
-          tracked = set(subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0"))
-          tracked.discard("")
+          changed = set(subprocess.check_output(
+              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD^", "HEAD"]
+          ).decode().splitlines())
           allowed = {
-              ".github/workflows/publish-dashboard.yml",
               "docs/.nojekyll",
               "docs/dashboard.json",
               "docs/index.html",
-              "tools/validate_dashboard_feed.py",
           }
-          if tracked != allowed:
-              raise SystemExit("Dashboard feed branch contains unexpected files")
+          if not changed or not changed.issubset(allowed):
+              raise SystemExit("Dashboard commit contains unexpected files: " + repr(changed))
           PY
 
       - name: Validate dashboard-only snapshot
