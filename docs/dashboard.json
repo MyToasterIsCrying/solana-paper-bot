@@ -1,6 +1,6 @@
 {
  "mode": "PAPER TRADING - SIMULATION ONLY (no wallet, no real transactions)",
- "generated_at": "2026-11-23T16:54:08+00:00",
+ "generated_at": "2026-11-24T07:55:23+00:00",
  "start_balance_usd": 100.0,
  "portfolio_value_usd": 85.44147548247203,
  "cash_usd": 85.44147548247203,
@@ -824,9 +824,9 @@
   }
  ],
  "schedule": {
-  "active": true,
-  "cadence": "GitHub Actions cron */15 * * * * (best effort: GitHub may start scheduled runs late or skip them under load)",
-  "note": "Scheduled runs via GitHub Actions"
+  "active": false,
+  "cadence": "LOCAL SERVICE STOPPED - monitoring, discovery, and new entries are disabled.",
+  "note": "No Windows service or scheduled task is running."
  },
  "recent_runs": [
   {
@@ -1236,5 +1236,6 @@
   "scheduled_for": "2026-11-23T16:45:00+00:00",
   "start_delay_sec": 491.0,
   "error_summary": null
- }
+ },
+ "publication_allowed": true
 }
