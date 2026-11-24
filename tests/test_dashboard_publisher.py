@@ -149,6 +149,9 @@ class DashboardPublisherTests(unittest.TestCase):
         self.assertIn("- main", workflow)
         self.assertIn("docs/dashboard.json", workflow)
         self.assertIn("path: docs", workflow)
+        self.assertIn("actions/upload-pages-artifact@v3", workflow)
+        self.assertIn("deploy:\n    needs: build", workflow)
+        self.assertIn("actions/deploy-pages@v4", workflow)
 
 
 if __name__ == "__main__":
