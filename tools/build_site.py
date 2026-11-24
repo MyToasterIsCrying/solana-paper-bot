@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the static GitHub Pages dashboard (docs/index.html + docs/dashboard.json) from dashboard.json."""
-import os, json
+"""Generate the static GitHub Pages dashboard (docs/index.html + docs/dashboard.json)."""
+import argparse
+import json
+import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TEMPLATE = r"""<!doctype html>
@@ -78,14 +80,29 @@ $('evals').innerHTML=table(['Token','Mint','Price','Liquidity','Safety','Score',
 </script></body></html>
 """
 
-def main():
-    d = json.load(open(os.path.join(ROOT, "dashboard.json")))
-    os.makedirs(os.path.join(ROOT, "docs"), exist_ok=True)
+def build(dashboard_path=None, output_dir=None):
+    dashboard_path = dashboard_path or os.path.join(ROOT, "dashboard.json")
+    output_dir = output_dir or os.path.join(ROOT, "docs")
+    with open(dashboard_path, encoding="utf-8") as source:
+        d = json.load(source)
+    os.makedirs(output_dir, exist_ok=True)
     blob = json.dumps(d, default=str, separators=(",", ":")).replace("</", "<\\/")
-    open(os.path.join(ROOT, "docs", "index.html"), "w").write(TEMPLATE.replace("__DATA__", blob))
-    json.dump(d, open(os.path.join(ROOT, "docs", "dashboard.json"), "w"), indent=1, default=str)
-    open(os.path.join(ROOT, "docs", ".nojekyll"), "w").write("")
-    print("docs/index.html written,", len(blob), "bytes of data")
+    with open(os.path.join(output_dir, "index.html"), "w", encoding="utf-8", newline="\n") as output:
+        output.write(TEMPLATE.replace("__DATA__", blob))
+    with open(os.path.join(output_dir, "dashboard.json"), "w", encoding="utf-8", newline="\n") as output:
+        json.dump(d, output, indent=1, default=str)
+    with open(os.path.join(output_dir, ".nojekyll"), "w", encoding="utf-8", newline="\n") as output:
+        output.write("")
+    return len(blob.encode("utf-8"))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build the paper-trading GitHub Pages dashboard")
+    parser.add_argument("--dashboard", default=os.path.join(ROOT, "dashboard.json"))
+    parser.add_argument("--output-dir", default=os.path.join(ROOT, "docs"))
+    args = parser.parse_args()
+    size = build(args.dashboard, args.output_dir)
+    print(os.path.basename(args.output_dir) + "/index.html written,", size, "bytes of data")
 
 if __name__ == "__main__":
     main()

@@ -134,10 +134,10 @@ class LiveMarketData:
                     out[base] = q
         return out
 
-    def quote_pair(self, token_address, pair_address):
+    def quote_pair(self, token_address, pair_address, retries=2):
         """Fresh quote for a specific pair (used for entries and exits)."""
         url = f"{config.DEXSCREENER}/tokens/v1/solana/{token_address}"
-        data, ts = self._get(url)
+        data, ts = self._get(url, retries=retries)
         for p in data or []:
             if p.get("pairAddress") == pair_address:
                 q = Quote(p); q["_source_url"] = url; q["_fetched_at"] = ts

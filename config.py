@@ -4,6 +4,20 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("PAPERBOT_DB", os.path.join(BASE_DIR, "ledger.db"))
 LOCK_PATH = os.environ.get("PAPERBOT_LOCK", os.path.join(BASE_DIR, "run.lock"))
+CANONICAL_LOCAL_DATA_DIR = os.path.join(
+    os.environ.get("LOCALAPPDATA", os.path.join(os.path.expanduser("~"), ".local", "share")),
+    "SolanaPaperBot",
+)
+CANONICAL_LOCAL_DB_PATH = os.path.join(CANONICAL_LOCAL_DATA_DIR, "local_ledger.db")
+CANONICAL_LOCAL_DASHBOARD_PATH = os.path.join(CANONICAL_LOCAL_DATA_DIR, "local_dashboard.json")
+LOCAL_DATA_DIR = os.environ.get("PAPERBOT_LOCAL_DATA_DIR", CANONICAL_LOCAL_DATA_DIR)
+LOCAL_DB_PATH = os.environ.get("PAPERBOT_LOCAL_DB", os.path.join(LOCAL_DATA_DIR, "local_ledger.db"))
+LOCAL_LOCK_PATH = os.environ.get("PAPERBOT_LOCAL_LOCK", os.path.join(LOCAL_DATA_DIR, "local.lock"))
+LOCAL_LOG_PATH = os.environ.get("PAPERBOT_LOCAL_LOG", os.path.join(LOCAL_DATA_DIR, "local_monitor.log"))
+LOCAL_DASHBOARD_PATH = os.environ.get("PAPERBOT_LOCAL_DASHBOARD",
+                                      os.path.join(LOCAL_DATA_DIR, "local_dashboard.json"))
+POSITION_MONITOR_INTERVAL_SEC = 60
+TOKEN_DISCOVERY_INTERVAL_SEC = 15 * 60
 
 # --- Virtual account ---
 START_BALANCE_USD = 100.0

@@ -38,8 +38,12 @@ def build(db_path=None):
         if t["side"] == "BUY":
             t["exit_reason"] = None; t["realized_pnl_usd"] = None
     sched_file = os.path.join(config.BASE_DIR, "schedule_status.json")
-    schedule = json.load(open(sched_file)) if os.path.exists(sched_file) else {"active": False, "next_run": None,
-               "note": "Scheduled runs are NOT active (awaiting approval)."}
+    if os.path.exists(sched_file):
+        with open(sched_file, encoding="utf-8") as schedule_file:
+            schedule = json.load(schedule_file)
+    else:
+        schedule = {"active": False, "next_run": None,
+                    "note": "Scheduled runs are NOT active (awaiting approval)."}
     out = {
         "mode": "PAPER TRADING - SIMULATION ONLY (no wallet, no real transactions)",
         "generated_at": db.now_iso(),

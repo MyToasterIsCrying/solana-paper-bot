@@ -1,8 +1,9 @@
 """Accounting / risk / lock tests. Uses a SEPARATE temp DB and SYNTHETIC TEST-FIXTURE prices.
 Nothing here touches ledger.db and none of these prices are market data."""
-import os, sys, time, json, tempfile, unittest, datetime, fcntl, sqlite3, subprocess
+import os, sys, time, json, tempfile, unittest, datetime, sqlite3, subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config, db, run_cycle, dashboard
+from platform_lock import acquire_lock, release_lock
 from agents import risk
 
 FIXTURE_URL = "TEST-FIXTURE://synthetic"   # clearly not a real source
@@ -32,7 +33,7 @@ class FixtureMarketData:
         return list(self.tokens), [{"url": FIXTURE_URL, "fetched_at": now_iso()}], []
     def pairs_for_tokens(self, addrs):
         return {a: self._pair(a) for a in addrs if a in self.tokens}
-    def quote_pair(self, token, pair):
+    def quote_pair(self, token, pair, retries=2):
         return self._pair(token) if token in self.tokens else None
     def rugcheck(self, mint):
         if mint in self.rug_fail:
@@ -155,27 +156,34 @@ class TestAccounting(Base):
         self.assertEqual(out["evaluated"][0]["decision"], "reject_safety")
 
     def test_lock_prevents_overlap(self):
-        fh = open(self.lock, "a+"); fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fh = acquire_lock(self.lock)
+        self.assertIsNotNone(fh)
         try:
             out = self.run_cycle(FixtureMarketData({"TOKEN_G1": {"price": 1.0}}))
             self.assertEqual(out["status"], "skipped_overlap")
+            self.assertIsNone(out["run_id"])
             c = self.con()
-            self.assertEqual(c.execute("SELECT COUNT(*) FROM runs WHERE status='skipped_overlap'").fetchone()[0], 1)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM runs").fetchone()[0], 0)
             self.assertEqual(c.execute("SELECT COUNT(*) FROM positions").fetchone()[0], 0)
         finally:
-            fcntl.flock(fh, fcntl.LOCK_UN); fh.close()
+            release_lock(fh)
         out = self.run_cycle(FixtureMarketData({"TOKEN_G1": {"price": 1.0}}))
         self.assertEqual(out["status"], "ok")
 
     def test_lock_across_processes(self):
-        # a separate OS process holds the lock; our run must exit immediately
         holder = subprocess.Popen([sys.executable, "-c",
-            f"import fcntl,time;f=open({self.lock!r},'a+');fcntl.flock(f,fcntl.LOCK_EX);print('held',flush=True);time.sleep(5)"],
+            f"import sys,time;sys.path.insert(0,{os.path.dirname(os.path.dirname(os.path.abspath(__file__)))!r});"
+            f"from platform_lock import acquire_lock;f=acquire_lock({self.lock!r});"
+            "print('held' if f else 'failed',flush=True);time.sleep(5)"],
             stdout=subprocess.PIPE, text=True)
-        holder.stdout.readline()
-        t = time.time(); out = self.run_cycle(FixtureMarketData({"TOKEN_H1": {"price": 1.0}}))
-        self.assertEqual(out["status"], "skipped_overlap"); self.assertLess(time.time() - t, 2)
-        holder.kill(); holder.wait()
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "held")
+            t = time.time(); out = self.run_cycle(FixtureMarketData({"TOKEN_H1": {"price": 1.0}}))
+            self.assertEqual(out["status"], "skipped_overlap"); self.assertLess(time.time() - t, 2)
+        finally:
+            holder.terminate()
+            holder.wait()
+            holder.stdout.close()
 
 class TestDedup(Base):
     def test_dedupe_helper(self):
@@ -207,6 +215,9 @@ class TestLedgerIO(Base):
         import ledger_io
         md = FixtureMarketData({"TOKEN_R1": {"price": 1.0}})
         self.run_cycle(md); md.tokens["TOKEN_R1"]["price"] = 1.2; self.run_cycle(md)
+        c = self.con()
+        c.execute("UPDATE positions SET name=? WHERE id=1", ("Unicode \u03a9 name",))
+        c.commit()
         out = os.path.join(self.tmp, "ledger"); db2 = os.path.join(self.tmp, "restored.db")
         ledger_io.dump(self.dbp, out); ledger_io.restore(out, db2)
         ledger_io.compare(self.dbp, db2)   # raises on any mismatch

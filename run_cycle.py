@@ -1,39 +1,50 @@
 #!/usr/bin/env python3
 """Solana Paper Bot 2.0 -- one full cycle: monitor exits -> scan -> safety -> analyst -> risk -> executor -> snapshot.
 PAPER TRADING ONLY. Usage: python3 run_cycle.py [--trigger manual|cron]"""
-import sys, os, fcntl, json, argparse, traceback, time
+import sys, os, json, argparse, traceback, time
 import config, db
+from platform_lock import acquire_lock as _acquire_lock, release_lock
 from agents import scanner, safety, analyst, risk, executor
 
 def acquire_lock(path):
-    fh = open(path, "a+")
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        fh.close(); return None
-    fh.seek(0); fh.truncate(); fh.write(f"{os.getpid()} {db.now_iso()}\n"); fh.flush()
-    return fh
+    return _acquire_lock(path)
 
-def monitor_positions(con, md, run_id, summary):
+def monitor_positions(con, md, run_id, summary, quote_retries=None):
     for pos in db.open_positions(con):
+        quote_started = time.monotonic()
         try:
-            q = md.quote_pair(pos["token_address"], pos["pair_address"])
+            if quote_retries is None:
+                q = md.quote_pair(pos["token_address"], pos["pair_address"])
+            else:
+                q = md.quote_pair(pos["token_address"], pos["pair_address"], retries=quote_retries)
         except Exception as e:
+            latency = round(time.monotonic() - quote_started, 3)
             db.log_error(con, run_id, "monitor", f"{pos['symbol']} {pos['token_address']}: quote failed: {e}"); con.commit()
-            summary["monitor"].append({"symbol": pos["symbol"], "action": "hold (no quote)"}); continue
+            summary["monitor"].append({
+                "symbol": pos["symbol"], "action": "hold (no quote)",
+                "quote_latency_sec": latency,
+            }); continue
+        latency = round(time.monotonic() - quote_started, 3)
         ok, why = executor.quote_is_fresh(q)
         if not ok:
             db.log_error(con, run_id, "monitor", f"{pos['symbol']}: no fresh verified price ({why}); holding, exit re-checked next cycle")
-            con.commit(); summary["monitor"].append({"symbol": pos["symbol"], "action": f"hold ({why})"}); continue
+            con.commit(); summary["monitor"].append({
+                "symbol": pos["symbol"], "action": f"hold ({why})",
+                "quote_latency_sec": latency,
+            }); continue
         sig, chg = risk.exit_signal(pos["entry_mid_price"], float(q["priceUsd"]))
         if sig:
             pnl, s = executor.close_position(con, run_id, pos, q, sig)
             summary["exits"].append({"symbol": pos["symbol"], "token": pos["token_address"], "reason": sig,
                                      "exit_mid": float(q["priceUsd"]), "chg_pct": round(chg * 100, 2), "pnl_usd": round(pnl, 4),
-                                     "source": q["_source_url"], "fetched_at": q["_fetched_at"]})
+                                     "source": q["_source_url"], "fetched_at": q["_fetched_at"],
+                                     "quote_latency_sec": latency})
         else:
             executor.mark(con, pos, q)
-            summary["monitor"].append({"symbol": pos["symbol"], "action": "hold", "chg_pct": round(chg * 100, 2)})
+            summary["monitor"].append({
+                "symbol": pos["symbol"], "action": "hold", "chg_pct": round(chg * 100, 2),
+                "quote_latency_sec": latency,
+            })
 
 def scan_and_enter(con, md, run_id, summary):
     sc = scanner.scan(md, con)
@@ -129,12 +140,9 @@ def snapshot(con, run_id):
 
 def run(db_path=None, md=None, trigger="manual", lock_path=None):
     lock = acquire_lock(lock_path or config.LOCK_PATH)
-    con = db.connect(db_path)
     if lock is None:
-        cur = con.execute("INSERT INTO runs(started_at,finished_at,status,trigger,summary) VALUES (?,?,?,?,?)",
-                          (db.now_iso(), db.now_iso(), "skipped_overlap", trigger, "another run holds the lock"))
-        rid = cur.lastrowid; con.commit(); con.close()
-        return {"status": "skipped_overlap", "run_id": rid}
+        return {"status": "skipped_overlap", "run_id": None}
+    con = db.connect(db_path)
     if md is None:
         from marketdata import LiveMarketData
         md = LiveMarketData()
@@ -160,7 +168,7 @@ def run(db_path=None, md=None, trigger="manual", lock_path=None):
     summary["api_stats"] = getattr(md, "stats", None)
     con.execute("UPDATE runs SET finished_at=?, status=?, summary=? WHERE id=?", (db.now_iso(), status, db.j(summary), run_id))
     con.commit(); con.close()
-    fcntl.flock(lock, fcntl.LOCK_UN); lock.close()
+    release_lock(lock)
     summary["status"] = status
     return summary
 

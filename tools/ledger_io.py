@@ -32,7 +32,8 @@ def dump(db=DB, out=OUT):
     schema = [r[0] + ";" for r in con.execute(
         "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' "
         "AND tbl_name NOT IN ({}) ORDER BY type DESC, name".format(",".join("?" * len(EXCLUDE))), tuple(EXCLUDE))]
-    open(os.path.join(tmp, "schema.sql"), "w").write("\n".join(schema) + "\n")
+    with open(os.path.join(tmp, "schema.sql"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(schema) + "\n")
     tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
     state = []
     for t in tables:
@@ -47,14 +48,16 @@ def dump(db=DB, out=OUT):
                     rows = list(_inserts(con, t, f'WHERE "{col}" IS NULL'))
                 else:
                     rows = list(_inserts(con, t, f'WHERE substr("{col}",1,10)=?', (d,)))
-                open(os.path.join(tmp, t, f"{d}.sql"), "w").write("\n".join(rows) + "\n")
+                with open(os.path.join(tmp, t, f"{d}.sql"), "w", encoding="utf-8", newline="\n") as f:
+                    f.write("\n".join(rows) + "\n")
         else:
             state += list(_inserts(con, t))
     if con.execute("SELECT 1 FROM sqlite_master WHERE name='sqlite_sequence'").fetchone():
         state.append("DELETE FROM sqlite_sequence;")
         state += [f"INSERT INTO sqlite_sequence VALUES('{n}',{s});" for n, s in
                   con.execute("SELECT name, seq FROM sqlite_sequence WHERE name NOT IN ('safety_cache') ORDER BY name")]
-    open(os.path.join(tmp, "state.sql"), "w").write("\n".join(state) + "\n")
+    with open(os.path.join(tmp, "state.sql"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(state) + "\n")
     con.close()
     shutil.rmtree(out, ignore_errors=True); os.replace(tmp, out)
 
@@ -63,32 +66,42 @@ def restore(src=OUT, db=DB):
         if os.path.exists(db + ext):
             os.remove(db + ext)
     con = sqlite3.connect(db)
-    con.executescript(open(os.path.join(src, "schema.sql")).read())
-    con.execute("BEGIN")
-    for t in sorted(PARTITIONED):
-        for f in sorted(glob.glob(os.path.join(src, t, "*.sql"))):
-            for line in open(f):
+    try:
+        with open(os.path.join(src, "schema.sql"), encoding="utf-8") as f:
+            con.executescript(f.read())
+        con.execute("BEGIN")
+        for t in sorted(PARTITIONED):
+            for f in sorted(glob.glob(os.path.join(src, t, "*.sql"))):
+                with open(f, encoding="utf-8") as sql_file:
+                    for line in sql_file:
+                        if line.strip():
+                            con.execute(line)
+        with open(os.path.join(src, "state.sql"), encoding="utf-8") as f:
+            for line in f:
                 if line.strip():
                     con.execute(line)
-    for line in open(os.path.join(src, "state.sql")):
-        if line.strip():
-            con.execute(line)
-    con.commit(); con.close()
+        con.commit()
+    finally:
+        con.close()
 
 def compare(a, b):
     ca, cb = sqlite3.connect(a), sqlite3.connect(b)
-    for (t,) in ca.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"):
-        if t in EXCLUDE:
-            continue
-        ra = ca.execute(f'SELECT * FROM "{t}" ORDER BY rowid').fetchall()
-        rb = cb.execute(f'SELECT * FROM "{t}" ORDER BY rowid').fetchall()
-        if ra != rb:
-            raise SystemExit(f"MISMATCH in {t}: {len(ra)} vs {len(rb)} rows")
-        print(f"  {t}: {len(ra)} rows identical")
-    sa = ca.execute("SELECT * FROM sqlite_sequence WHERE name!='safety_cache' ORDER BY name").fetchall()
-    sb = cb.execute("SELECT * FROM sqlite_sequence ORDER BY name").fetchall()
-    if sa != sb:
-        raise SystemExit(f"MISMATCH in sqlite_sequence: {sa} vs {sb}")
+    try:
+        for (t,) in ca.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"):
+            if t in EXCLUDE:
+                continue
+            ra = ca.execute(f'SELECT * FROM "{t}" ORDER BY rowid').fetchall()
+            rb = cb.execute(f'SELECT * FROM "{t}" ORDER BY rowid').fetchall()
+            if ra != rb:
+                raise SystemExit(f"MISMATCH in {t}: {len(ra)} vs {len(rb)} rows")
+            print(f"  {t}: {len(ra)} rows identical")
+        sa = ca.execute("SELECT * FROM sqlite_sequence WHERE name!='safety_cache' ORDER BY name").fetchall()
+        sb = cb.execute("SELECT * FROM sqlite_sequence ORDER BY name").fetchall()
+        if sa != sb:
+            raise SystemExit(f"MISMATCH in sqlite_sequence: {sa} vs {sb}")
+    finally:
+        ca.close()
+        cb.close()
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""

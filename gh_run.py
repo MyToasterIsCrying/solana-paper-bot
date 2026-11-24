@@ -43,14 +43,16 @@ def main():
     except Exception:
         err = traceback.format_exc(); print(err, file=sys.stderr)
     con = db.connect()
-    if rid is None:   # crash before/outside the cycle: still leave a record
+    if rid is None and status != "skipped_overlap":   # crash before/outside the cycle: still leave a record
         cur = con.execute("INSERT INTO runs(started_at,finished_at,status,trigger,summary) VALUES (?,?,?,?,?)",
                           (iso(started), db.now_iso(), "crashed", "github-actions", None))
         rid = cur.lastrowid
         db.log_error(con, rid, "gh_run", err or "unknown crash")
-    sets = ", ".join(f"{k}=?" for k in meta) + ", error_summary=?"
-    con.execute(f"UPDATE runs SET {sets} WHERE id=?", (*meta.values(), (err or "")[:1000] or None, rid))
-    con.commit(); con.close()
+    if rid is not None:
+        sets = ", ".join(f"{k}=?" for k in meta) + ", error_summary=?"
+        con.execute(f"UPDATE runs SET {sets} WHERE id=?", (*meta.values(), (err or "")[:1000] or None, rid))
+        con.commit()
+    con.close()
     print(f"ledger run {rid}: status={status} event={event} delay_sec={delay}")
     return 0 if status in ("ok", "skipped_overlap") else 1
 

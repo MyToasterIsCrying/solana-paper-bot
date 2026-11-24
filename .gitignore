@@ -1,8 +1,12 @@
 # working copy of the ledger is rebuilt from ledger/*.sql on every run
 ledger.db
 ledger.db-*
+local_ledger.db*
+local_dashboard.json
 *.lock
 run.lock
+local_monitor.log*
+.paperbot-dashboard-*
 __pycache__/
 *.pyc
 cron.log
